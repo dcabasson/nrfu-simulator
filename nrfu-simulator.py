@@ -51,6 +51,7 @@ class RandomgNRFUTest() :
         self.assigned=set()
         self.initCoords=(100,100)
         self.totalDistance=0
+        self.successRate=None
         self.displayAll()
         canvas.bind("<Button-1>", self.startTk)
         canvas.pack()
@@ -114,8 +115,8 @@ class RandomgNRFUTest() :
             self.assigned.add(random.sample(self.outstanding,1)[0])
             
     def printFinalDistribution(self) :
-        successRate=100*len(self.resolved)/len(self.universe)
-        print("Resolution rate : {0}% ({1} resolved)".format(successRate,len(self.resolved)))
+        self.successRate=100*len(self.resolved)/len(self.universe)
+        print("Resolution rate : {0}% ({1} resolved)".format(self.successRate,len(self.resolved)))
         print("Attempt distribution :")
         tally = defaultdict(int)
         c = RandomgNRFUTest.tallyAccumulator(tally)
@@ -125,7 +126,7 @@ class RandomgNRFUTest() :
         for key in sorted(tally.keys()):
             print("{0} attempt(s): {1}%".format(key,100*tally.get(key)/len(self.universe)))
         self.displayAll()
-        label = Label(root, text="Total distance : {0:.0f} \n Success : {1}%".format(self.totalDistance,successRate))
+        label = Label(root, text="Total distance : {0:.0f} \n Success : {1}%".format(self.totalDistance,self.successRate))
         label.bind("<Button-1>", self.stopTk)
         label.pack()
         
