@@ -13,6 +13,7 @@ from PIL import Image, ImageTk
 
 homeImage = ImageTk.PhotoImage(Image.open("home-icon.png"))
 blueDot = ImageTk.PhotoImage(Image.open("blue_dot.gif"))
+redDot = ImageTk.PhotoImage(Image.open("red_dot.png"))
 
 ASSIGNMENT_SIZE=30
 
@@ -33,6 +34,14 @@ class Dwelling() :
     
     def __eq__(self, other):
         return self.coords[0]==other.coords[0] and self.coords[1]==other.coords[1]
+        
+    def isAttemptSuccess(self) :
+        draw = random.random()
+        self.attempts=self.attempts+1
+        success=((self.attempts<3 and draw<0.3) or (self.attempts<7 and draw<0.25) or draw<0.2)
+        if success:
+            self.resolved=True
+        return success
 
 class RandomgNRFUTest() :
     def __init__(self,dwellings) :
@@ -41,6 +50,17 @@ class RandomgNRFUTest() :
         self.resolved=set()
         self.assigned=set()
         self.initCoords=(100,100)
+        self.totalDistance=0
+        self.displayAll()
+        canvas.bind("<Button-1>", self.startTk)
+        canvas.pack()
+        
+    def displayAll(self) :
+        canvas.create_image(self.initCoords[0], self.initCoords[1], image = homeImage)
+        for dwelling in self.outstanding :
+            canvas.create_image(dwelling.coords[0], dwelling.coords[1], image = blueDot)
+        for dwelling in self.resolved :
+            canvas.create_image(dwelling.coords[0], dwelling.coords[1], image = redDot)
         
     def playOneStep(self) :
         canvas.delete(ALL)
@@ -57,19 +77,25 @@ class RandomgNRFUTest() :
             turnOutstanding.remove(nextDwelling)
             currentCoords=nextDwelling.coords
             turnDistance+=distance
-            draw = random.random()
-            nextDwelling.attempts=nextDwelling.attempts+1
-            if ((nextDwelling.attempts<3 and draw<0.3) or draw<0.25) :
-                nextDwelling.resolved=True
-                self.outstanding.remove(nextDwelling)
-                self.resolved.add(nextDwelling)
-                self.assigned.remove(nextDwelling)
+            self.makeAttempt(nextDwelling)
         root.update_idletasks()
-        time.sleep(2)
+        time.sleep(0.5)
         # Complete assignment
         self.completeAssignment()
         return turnDistance
+
+    def makeAttempt(self, aDwelling) :
+        if aDwelling.isAttemptSuccess() :
+                self.outstanding.remove(aDwelling)
+                self.resolved.add(aDwelling)
+                self.assigned.remove(aDwelling)
+
+    def startTk(self,event) :
+        self.play()
         
+    def stopTk(self,event) :
+        root.quit()
+
     def play(self) :
         self.completeAssignment()
         totalDistance = 0
@@ -77,17 +103,19 @@ class RandomgNRFUTest() :
             print("Playing turn : " + str(i))
             distance=self.playOneStep()
             print("Turn played with {0:.2f} distance".format(distance))
-            totalDistance+=distance
-        print("Finished the 20 turns with a total distance of {0:.2f}".format(totalDistance))
+            self.totalDistance+=distance
+        print("Finished the 20 turns with a total distance of {0:.2f}".format(self.totalDistance))
         self.printFinalDistribution()
-        root.quit()
+        canvas.bind("<Button-1>", self.stopTk)
+        canvas.pack()
         
     def completeAssignment(self) :
         while len(self.assigned)<ASSIGNMENT_SIZE and len(self.outstanding)>len(self.assigned) :
             self.assigned.add(random.sample(self.outstanding,1)[0])
             
     def printFinalDistribution(self) :
-        print("Resolution : {0} out of {1}".format(len(self.resolved),len(self.universe)))
+        successRate=100*len(self.resolved)/len(self.universe)
+        print("Resolution rate : {0}% ({1} resolved)".format(successRate,len(self.resolved)))
         print("Attempt distribution :")
         tally = defaultdict(int)
         c = RandomgNRFUTest.tallyAccumulator(tally)
@@ -95,7 +123,12 @@ class RandomgNRFUTest() :
         for aDwelling in self.universe :
             c.send(aDwelling)
         for key in sorted(tally.keys()):
-            print("{0} attempt(s): {1}".format(key,tally.get(key)))
+            print("{0} attempt(s): {1}%".format(key,100*tally.get(key)/len(self.universe)))
+        self.displayAll()
+        label = Label(root, text="Total distance : {0:.0f} \n Success : {1}%".format(self.totalDistance,successRate))
+        label.bind("<Button-1>", self.stopTk)
+        label.pack()
+        
     
     @staticmethod    
     def tallyAccumulator(t):
@@ -135,5 +168,5 @@ standardDwellings = set(standardDwellings)
 
 test=RandomgNRFUTest(standardDwellings)
 
-root.after(5,test.play)
+# root.after(5,test.play)
 root.mainloop()
