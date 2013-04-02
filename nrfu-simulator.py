@@ -3,13 +3,12 @@ import math
 from collections import defaultdict
 from tkinter import *
 import time
-
-root = Tk()
-
-canvas = Canvas(root,width = 500, height = 500)
-canvas.pack(expand = YES)
+import threading
+import copy
 
 from PIL import Image, ImageTk
+
+root = Tk()
 
 homeImage = ImageTk.PhotoImage(Image.open("home-icon.png"))
 blueDot = ImageTk.PhotoImage(Image.open("blue_dot.gif"))
@@ -44,43 +43,61 @@ class Dwelling() :
         return success
 
 class RandomgNRFUTest() :
-    def __init__(self,dwellings) :
-        self.universe=dwellings
-        self.outstanding=list(dwellings)
+    def __init__(self,dwellings, tkContainer=None) :
+        self.universe=copy.deepcopy(dwellings)
+        self.outstanding=list(self.universe)
         self.resolved=set()
         self.assigned=set()
         self.initCoords=(100,100)
         self.totalDistance=0
         self.successRate=None
-        self.displayAll()
-        canvas.bind("<Button-1>", self.startTk)
-        canvas.pack()
+        self.tkContainer=tkContainer
+        if self.tkContainer is None :
+            # Head down
+            self.canvas=None
+        else :
+            self.canvas = Canvas(self.tkContainer,width = 500, height = 500)
+            self.canvas.pack(expand = YES)
+            self.displayAll()
+            self.canvas.bind("<Button-1>", self.startTk)
+            self.canvas.pack()
         
     def displayAll(self) :
-        canvas.create_image(self.initCoords[0], self.initCoords[1], image = homeImage)
-        for dwelling in self.outstanding :
-            canvas.create_image(dwelling.coords[0], dwelling.coords[1], image = blueDot)
-        for dwelling in self.resolved :
-            canvas.create_image(dwelling.coords[0], dwelling.coords[1], image = redDot)
+        if self.canvas is not None :
+            self.canvas.delete(ALL)
+            self.canvas.create_image(self.initCoords[0], self.initCoords[1], image = homeImage)
+            for dwelling in self.outstanding :
+                self.canvas.create_image(dwelling.coords[0], dwelling.coords[1], image = blueDot)
+            for dwelling in self.resolved :
+                self.canvas.create_image(dwelling.coords[0], dwelling.coords[1], image = redDot)
         
     def playOneStep(self) :
-        canvas.delete(ALL)
+        if self.canvas is not None :
+            self.canvas.delete(ALL)
         turnOutstanding=list(self.assigned)
         currentCoords=self.initCoords
         turnDistance=0
-        canvas.create_image(self.initCoords[0], self.initCoords[1], image = homeImage)
+        if self.canvas is not None :
+            self.canvas.create_image(self.initCoords[0], self.initCoords[1], image = homeImage)
         # Visit all the dwellings
         while(len(turnOutstanding)>0) :
             (nextDwelling, distance) = RandomgNRFUTest.findNextClosest(currentCoords,turnOutstanding)
             #DEBUG : print("Next closest is : " + str(nextDwelling))
-            canvas.create_line(currentCoords[0], currentCoords[1], nextDwelling.coords[0], nextDwelling.coords[1])
-            canvas.create_image(nextDwelling.coords[0], nextDwelling.coords[1], image = blueDot)
             turnOutstanding.remove(nextDwelling)
-            currentCoords=nextDwelling.coords
             turnDistance+=distance
             self.makeAttempt(nextDwelling)
-        root.update_idletasks()
-        time.sleep(0.5)
+            if self.canvas is not None :
+                self.canvas.create_line(currentCoords[0], currentCoords[1], nextDwelling.coords[0], nextDwelling.coords[1])
+                if nextDwelling.resolved :
+                    dotIcon=redDot
+                else :
+                    dotIcon=blueDot
+                self.canvas.create_image(nextDwelling.coords[0], nextDwelling.coords[1], image = dotIcon)
+            currentCoords=nextDwelling.coords
+            
+        if self.tkContainer is not None :
+            self.tkContainer.update_idletasks()
+            time.sleep(0.5)
         # Complete assignment
         self.completeAssignment()
         return turnDistance
@@ -95,7 +112,7 @@ class RandomgNRFUTest() :
         self.play()
         
     def stopTk(self,event) :
-        root.quit()
+        self.tkContainer.quit()
 
     def play(self) :
         self.completeAssignment()
@@ -107,8 +124,9 @@ class RandomgNRFUTest() :
             self.totalDistance+=distance
         print("Finished the 20 turns with a total distance of {0:.2f}".format(self.totalDistance))
         self.printFinalDistribution()
-        canvas.bind("<Button-1>", self.stopTk)
-        canvas.pack()
+        if self.canvas is not None :
+            self.canvas.bind("<Button-1>", self.stopTk)
+            self.canvas.pack()
         
     def completeAssignment(self) :
         while len(self.assigned)<ASSIGNMENT_SIZE and len(self.outstanding)>len(self.assigned) :
@@ -125,10 +143,11 @@ class RandomgNRFUTest() :
             c.send(aDwelling)
         for key in sorted(tally.keys()):
             print("{0} attempt(s): {1}%".format(key,100*tally.get(key)/len(self.universe)))
-        self.displayAll()
-        label = Label(root, text="Total distance : {0:.0f} \n Success : {1}%".format(self.totalDistance,self.successRate))
-        label.bind("<Button-1>", self.stopTk)
-        label.pack()
+        if self.canvas is not None :
+            self.displayAll()
+            label = Label(self.tkContainer, text="Total distance : {0:.0f} \n Success : {1}%".format(self.totalDistance,self.successRate))
+            label.bind("<Button-1>", self.stopTk)
+            label.pack()
         
     
     @staticmethod    
@@ -167,7 +186,27 @@ standardDwellings = [Dwelling((104,24)), Dwelling((408,29)), Dwelling((329,347))
 
 standardDwellings = set(standardDwellings)
 
-test=RandomgNRFUTest(standardDwellings)
+test=RandomgNRFUTest(standardDwellings, root)
 
-# root.after(5,test.play)
+allTests=[]
+allTests.append(test)
+
+class TestRunner(threading.Thread) :
+    def run(self) :
+        for i in range(1,50) :
+            aTest=RandomgNRFUTest(standardDwellings)
+            print("doing test #{0}".format(i))
+            allTests.append(aTest)
+            aTest.play()
+        while test.successRate is None :
+            time.sleep(1)
+        distances = [x.totalDistance for x in allTests]
+        successRates = [x.successRate for x in allTests]
+        nbTests=len(allTests)
+        label = Label(root, text="After {0} simulations, Average distance : {1:.0f} \n Average response rate : {2:.2f}%".format(nbTests,sum(distances)/nbTests,sum(successRates)/float(nbTests)))
+        label.pack()
+
+testRunner=TestRunner()
+
+root.after(1,testRunner.start)
 root.mainloop()
